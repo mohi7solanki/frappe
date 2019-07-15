@@ -441,7 +441,7 @@ def run_tests(context, app=None, module=None, doctype=None, test=(),
 	if coverage:
 		# Generate coverage report only for app that is being tested
 		source_path = os.path.join(get_bench_path(), 'apps', app or 'frappe')
-		cov = Coverage(source=[source_path], omit=['*.html', '*.js', '*.css'])
+		cov = Coverage(source=[source_path], omit=['*.html', '*.js', '*.xml', '*.css', '*/doctype/*/*_dashboard.py', '*/patches/*'])
 		cov.start()
 
 	ret = frappe.test_runner.main(app, module, doctype, context.verbose, tests=tests,
@@ -459,26 +459,26 @@ def run_tests(context, app=None, module=None, doctype=None, test=(),
 		sys.exit(ret)
 
 @click.command('run-ui-tests')
-@click.option('--app', help="App to run tests on, leave blank for all apps")
-@click.option('--test', help="Path to the specific test you want to run")
-@click.option('--test-list', help="Path to the txt file with the list of test cases")
-@click.option('--profile', is_flag=True, default=False)
+@click.argument('app')
+@click.option('--headless', is_flag=True, help="Run UI Test in headless mode")
 @pass_context
-def run_ui_tests(context, app=None, test=False, test_list=False, profile=False):
+def run_ui_tests(context, app, headless=False):
 	"Run UI tests"
-	import frappe.test_runner
 
 	site = get_site(context)
-	frappe.init(site=site)
-	frappe.connect()
+	app_base_path = os.path.abspath(os.path.join(frappe.get_app_path(app), '..'))
+	site_url = frappe.utils.get_site_url(site)
+	admin_password = frappe.get_conf(site).admin_password
 
-	ret = frappe.test_runner.run_ui_tests(app=app, test=test, test_list=test_list, verbose=context.verbose,
-		profile=profile)
-	if len(ret.failures) == 0 and len(ret.errors) == 0:
-		ret = 0
+	# override baseUrl using env variable
+	site_env = 'CYPRESS_baseUrl={}'.format(site_url)
+	password_env = 'CYPRESS_adminPassword={}'.format(admin_password) if admin_password else ''
 
-	if os.environ.get('CI'):
-		sys.exit(ret)
+	# run for headless mode
+	run_or_open = 'run' if headless else 'open'
+	command = '{site_env} {password_env} yarn run cypress {run_or_open}'
+	formatted_command = command.format(site_env=site_env, password_env=password_env, run_or_open=run_or_open)
+	frappe.commands.popen(formatted_command, cwd=app_base_path)
 
 @click.command('run-setup-wizard-ui-test')
 @click.option('--app', help="App to run tests on, leave blank for all apps")
@@ -625,19 +625,30 @@ def setup_help(context):
 	print_in_app_help_deprecation()
 
 @click.command('rebuild-global-search')
+@click.option('--static-pages', is_flag=True, default=False, help='Rebuild global search for static pages')
 @pass_context
-def rebuild_global_search(context):
+def rebuild_global_search(context, static_pages=False):
 	'''Setup help table in the current site (called after migrate)'''
-	from frappe.utils.global_search import (get_doctypes_with_global_search, rebuild_for_doctype)
+	from frappe.utils.global_search import (get_doctypes_with_global_search, rebuild_for_doctype,
+		get_routes_to_index, add_route_to_global_search, sync_global_search)
 
 	for site in context.sites:
 		try:
 			frappe.init(site)
 			frappe.connect()
-			doctypes = get_doctypes_with_global_search()
-			for i, doctype in enumerate(doctypes):
-				rebuild_for_doctype(doctype)
-				update_progress_bar('Rebuilding Global Search', i, len(doctypes))
+
+			if static_pages:
+				routes = get_routes_to_index()
+				for i, route in enumerate(routes):
+					add_route_to_global_search(route)
+					frappe.local.request = None
+					update_progress_bar('Rebuilding Global Search', i, len(routes))
+				sync_global_search()
+			else:
+				doctypes = get_doctypes_with_global_search()
+				for i, doctype in enumerate(doctypes):
+					rebuild_for_doctype(doctype)
+					update_progress_bar('Rebuilding Global Search', i, len(doctypes))
 
 		finally:
 			frappe.destroy()

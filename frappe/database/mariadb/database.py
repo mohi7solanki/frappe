@@ -25,6 +25,7 @@ class MariaDBDatabase(Database):
 	REGEX_CHARACTER = 'regexp'
 
 	def setup_type_map(self):
+		self.db_type = 'mariadb'
 		self.type_map = {
 			'Currency':		('decimal', '18,6'),
 			'Int':			('int', '11'),
@@ -163,6 +164,10 @@ class MariaDBDatabase(Database):
 	@staticmethod
 	def cant_drop_field_or_key(e):
 		return e.args[0] == ER.CANT_DROP_FIELD_OR_KEY
+
+	@staticmethod
+	def is_syntax_error(e):
+		return e.args[0] == ER.PARSE_ERROR
 
 	def is_primary_key_violation(self, e):
 		return self.is_duplicate_entry(e) and 'PRIMARY' in cstr(e.args[1])

@@ -23,6 +23,14 @@ import frappe.website.render
 import json
 
 class InvalidFieldNameError(frappe.ValidationError): pass
+class UniqueFieldnameError(frappe.ValidationError): pass
+class IllegalMandatoryError(frappe.ValidationError): pass
+class DoctypeLinkError(frappe.ValidationError): pass
+class WrongOptionsDoctypeLinkError(frappe.ValidationError): pass
+class HiddenAndMandatoryWithoutDefaultError(frappe.ValidationError): pass
+class NonUniqueError(frappe.ValidationError): pass
+class CannotIndexedError(frappe.ValidationError): pass
+class CannotCreateStandardDoctypeError(frappe.ValidationError): pass
 
 form_grid_templates = {
 	"fields": "templates/form_grid/fields.html"
@@ -101,7 +109,7 @@ class DocType(Document):
 			return
 
 		if not frappe.conf.get("developer_mode") and not self.custom:
-			frappe.throw(_("Not in Developer Mode! Set in site_config.json or make 'Custom' DocType."))
+			frappe.throw(_("Not in Developer Mode! Set in site_config.json or make 'Custom' DocType."), CannotCreateStandardDoctypeError)
 
 	def setup_fields_to_fetch(self):
 		'''Setup query to update values for newly set fetch values'''
@@ -121,7 +129,7 @@ class DocType(Document):
 					link_fieldname, source_fieldname = df.fetch_from.split('.', 1)
 					link_df = new_meta.get_field(link_fieldname)
 
-					if frappe.conf.db_type == 'postgres':
+					if frappe.db.db_type == 'postgres':
 						update_query = '''
 							UPDATE `tab{doctype}`
 							SET `{fieldname}` = source.`{source_fieldname}`
@@ -195,6 +203,9 @@ class DocType(Document):
 							d.fieldname = d.fieldname + '_column'
 					else:
 						d.fieldname = d.fieldtype.lower().replace(" ","_") + "_" + str(d.idx)
+				else:
+					if d.fieldname in restricted:
+						frappe.throw(_("Fieldname {0} is restricted").format(d.fieldname), InvalidFieldNameError)
 
 				d.fieldname = re.sub('''['",./%@()<>{}]''', '', d.fieldname)
 
@@ -373,7 +384,7 @@ class DocType(Document):
 					os.path.join(new_path, fname.replace(frappe.scrub(old), frappe.scrub(new)))])
 
 		self.rename_inside_controller(new, old, new_path)
-		frappe.msgprint('Renamed files and replaced code in controllers, please check!')
+		frappe.msgprint(_('Renamed files and replaced code in controllers, please check!'))
 
 	def rename_inside_controller(self, new, old, new_path):
 		for fname in ('{}.js', '{}.py', '{}_list.js', '{}_calendar.js', 'test_{}.py', 'test_{}.js'):
@@ -542,7 +553,6 @@ def validate_fields_for_doctype(doctype):
 # this is separate because it is also called via custom field
 def validate_fields(meta):
 	"""Validate doctype fields. Checks
-
 	1. There are no illegal characters in fieldnames
 	2. If fieldnames are unique.
 	3. Validate column length.
@@ -562,38 +572,38 @@ def validate_fields(meta):
 	def check_illegal_characters(fieldname):
 		validate_column_name(fieldname)
 
-	def check_unique_fieldname(fieldname):
+	def check_unique_fieldname(docname, fieldname):
 		duplicates = list(filter(None, map(lambda df: df.fieldname==fieldname and str(df.idx) or None, fields)))
 		if len(duplicates) > 1:
-			frappe.throw(_("Fieldname {0} appears multiple times in rows {1}").format(fieldname, ", ".join(duplicates)))
+			frappe.throw(_("{0}: Fieldname {1} appears multiple times in rows {2}").format(docname, fieldname, ", ".join(duplicates)), UniqueFieldnameError)
 
 	def check_fieldname_length(fieldname):
 		validate_column_length(fieldname)
 
-	def check_illegal_mandatory(d):
+	def check_illegal_mandatory(docname, d):
 		if (d.fieldtype in no_value_fields) and d.fieldtype not in table_fields and d.reqd:
-			frappe.throw(_("Field {0} of type {1} cannot be mandatory").format(d.label, d.fieldtype))
+			frappe.throw(_("{0}: Field {1} of type {2} cannot be mandatory").format(docname, d.label, d.fieldtype), IllegalMandatoryError)
 
-	def check_link_table_options(d):
+	def check_link_table_options(docname, d):
 		if d.fieldtype in ("Link",) + table_fields:
 			if not d.options:
-				frappe.throw(_("Options required for Link or Table type field {0} in row {1}").format(d.label, d.idx))
+				frappe.throw(_("{0}: Options required for Link or Table type field {1} in row {2}").format(docname, d.label, d.idx), DoctypeLinkError)
 			if d.options=="[Select]" or d.options==d.parent:
 				return
 			if d.options != d.parent:
 				options = frappe.db.get_value("DocType", d.options, "name")
 				if not options:
-					frappe.throw(_("Options must be a valid DocType for field {0} in row {1}").format(d.label, d.idx))
+					frappe.throw(_("{0}: Options must be a valid DocType for field {1} in row {2}").format(docname, d.label, d.idx), WrongOptionsDoctypeLinkError)
 				elif not (options == d.options):
-					frappe.throw(_("Options {0} must be the same as doctype name {1} for the field {2}")
-						.format(d.options, options, d.label))
+					frappe.throw(_("{0}: Options {1} must be the same as doctype name {2} for the field {3}", DoctypeLinkError)
+						.format(docname, d.options, options, d.label))
 				else:
 					# fix case
 					d.options = options
 
-	def check_hidden_and_mandatory(d):
+	def check_hidden_and_mandatory(docname, d):
 		if d.hidden and d.reqd and not d.default:
-			frappe.throw(_("Field {0} in row {1} cannot be hidden and mandatory without default").format(d.label, d.idx))
+			frappe.throw(_("{0}: Field {1} in row {2} cannot be hidden and mandatory without default").format(docname, d.label, d.idx), HiddenAndMandatoryWithoutDefaultError)
 
 	def check_width(d):
 		if d.fieldtype == "Currency" and cint(d.width) < 100:
@@ -616,7 +626,9 @@ def validate_fields(meta):
 				frappe.throw(_("Options 'Dynamic Link' type of field must point to another Link Field with options as 'DocType'"))
 
 	def check_illegal_default(d):
-		if d.fieldtype == "Check" and d.default and d.default not in ('0', '1'):
+		if d.fieldtype == "Check" and not d.default:
+			d.default = '0'
+		if d.fieldtype == "Check" and d.default not in ('0', '1'):
 			frappe.throw(_("Default for 'Check' type of field must be either '0' or '1'"))
 		if d.fieldtype == "Select" and d.default and (d.default not in d.options.split("\n")):
 			frappe.throw(_("Default for {0} must be an option").format(d.fieldname))
@@ -625,14 +637,14 @@ def validate_fields(meta):
 		if d.fieldtype in ("Currency", "Float", "Percent") and d.precision is not None and not (1 <= cint(d.precision) <= 6):
 			frappe.throw(_("Precision should be between 1 and 6"))
 
-	def check_unique_and_text(d):
+	def check_unique_and_text(docname, d):
 		if meta.issingle:
 			d.unique = 0
 			d.search_index = 0
 
 		if getattr(d, "unique", False):
 			if d.fieldtype not in ("Data", "Link", "Read Only"):
-				frappe.throw(_("Fieldtype {0} for {1} cannot be unique").format(d.fieldtype, d.label))
+				frappe.throw(_("{0}: Fieldtype {1} for {2} cannot be unique").format(docname, d.fieldtype, d.label), NonUniqueError)
 
 			if not d.get("__islocal") and frappe.db.has_column(d.parent, d.fieldname):
 				has_non_unique_values = frappe.db.sql("""select `{fieldname}`, count(*)
@@ -641,10 +653,10 @@ def validate_fields(meta):
 					doctype=d.parent, fieldname=d.fieldname))
 
 				if has_non_unique_values and has_non_unique_values[0][0]:
-					frappe.throw(_("Field '{0}' cannot be set as Unique as it has non-unique values").format(d.label))
+					frappe.throw(_("{0}: Field '{1}' cannot be set as Unique as it has non-unique values").format(docname, d.label), NonUniqueError)
 
 		if d.search_index and d.fieldtype in ("Text", "Long Text", "Small Text", "Code", "Text Editor"):
-			frappe.throw(_("Fieldtype {0} for {1} cannot be indexed").format(d.fieldtype, d.label))
+			frappe.throw(_("{0}:Fieldtype {1} for {2} cannot be indexed").format(docname, d.fieldtype, d.label), CannotIndexedError)
 
 	def check_fold(fields):
 		fold_exists = False
@@ -790,21 +802,20 @@ def validate_fields(meta):
 	for d in fields:
 		if not d.permlevel: d.permlevel = 0
 		if d.fieldtype not in table_fields: d.allow_bulk_edit = 0
-		if d.fieldtype == "Barcode": d.ignore_xss_filter = 1
 		if not d.fieldname:
 			d.fieldname = d.fieldname.lower()
 
 		check_illegal_characters(d.fieldname)
-		check_unique_fieldname(d.fieldname)
+		check_unique_fieldname(meta.get("name"), d.fieldname)
 		check_fieldname_length(d.fieldname)
-		check_illegal_mandatory(d)
-		check_link_table_options(d)
+		check_illegal_mandatory(meta.get("name"), d)
+		check_link_table_options(meta.get("name"), d)
 		check_dynamic_link_options(d)
-		check_hidden_and_mandatory(d)
+		check_hidden_and_mandatory(meta.get("name"), d)
 		check_in_list_view(d)
 		check_in_global_search(d)
 		check_illegal_default(d)
-		check_unique_and_text(d)
+		check_unique_and_text(meta.get("name"), d)
 		check_illegal_depends_on_conditions(d)
 		check_table_multiselect_option(d)
 		scrub_options_in_select(d)

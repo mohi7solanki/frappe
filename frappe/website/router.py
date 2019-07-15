@@ -16,6 +16,7 @@ def resolve_route(path):
 
 	The only exceptions are `/about` and `/contact` these will be searched in Web Pages
 	first before checking the standard pages."""
+
 	if path not in ("about", "contact"):
 		context = get_page_info_from_template(path)
 		if context:
@@ -98,7 +99,10 @@ def get_page_info_from_doctypes(path=None):
 		values = []
 		controller = get_controller(doctype)
 		meta = frappe.get_meta(doctype)
-		condition_field = meta.is_published_field or controller.website.condition_field
+
+		condition_field = (meta.is_published_field or
+		# custom doctypes dont have controllers and no website attribute
+			(controller.website.condition_field if not meta.custom else None))
 
 		if condition_field:
 			condition ="where {0}=1".format(condition_field)
@@ -227,11 +231,24 @@ def get_page_info(path, app, start, basepath=None, app_path=None, fname=None):
 
 def setup_source(page_info):
 	'''Get the HTML source of the template'''
+	from frontmatter import Frontmatter
+
 	jenv = frappe.get_jenv()
 	source = jenv.loader.get_source(jenv, page_info.template)[0]
 	html = ''
 
 	if page_info.template.endswith('.md'):
+		# extract frontmatter block if exists
+		try:
+			# values will be used to update page_info
+			res = Frontmatter.read(source)
+			if res['attributes']:
+				page_info.update(res['attributes'])
+				source = res['body']
+		except Exception as e:
+			print('Error parsing ' + page_info.template)
+			print(e)
+
 		source = frappe.utils.md_to_html(source)
 
 		if not page_info.show_sidebar:
@@ -273,7 +290,7 @@ def extend_from_base_template(page_info, source):
 	'''
 
 	if (('</body>' not in source) and ('{% block' not in source)
-		and ('<!-- base_template:' not in source)):
+		and ('<!-- base_template:' not in source)) and 'base_template' not in page_info:
 		page_info.only_content = True
 		source = '''{% extends "templates/web.html" %}
 			{% block page_content %}\n''' + source + '\n{% endblock %}'
@@ -294,16 +311,13 @@ def load_properties_from_source(page_info):
 	if not page_info.title:
 		page_info.title = extract_title(page_info.source, page_info.route)
 
-	custom_base_template = extract_comment_tag(page_info.source, 'base_template')
+	base_template = extract_comment_tag(page_info.source, 'base_template')
+	if base_template:
+		page_info.base_template = base_template
 
-	page_info.meta_tags = frappe._dict()
-
-	page_info.meta_tags.name = extract_comment_tag(page_info.source, 'meta:name')
-	page_info.meta_tags.description = extract_comment_tag(page_info.source, 'meta:description')
-
-	if custom_base_template:
+	if page_info.base_template:
 		page_info.source = '''{{% extends "{0}" %}}
-			{{% block page_content %}}{1}{{% endblock %}}'''.format(custom_base_template, page_info.source)
+			{{% block page_content %}}{1}{{% endblock %}}'''.format(page_info.base_template, page_info.source)
 		page_info.no_cache = 1
 
 	if "<!-- no-breadcrumbs -->" in page_info.source:
@@ -351,51 +365,6 @@ def get_doctypes_with_web_view():
 		return doctypes
 
 	return frappe.cache().get_value('doctypes_with_web_view', _get)
-
-def sync_global_search():
-	'''Sync page content in global search'''
-	from frappe.website.render import render_page
-	from frappe.utils.global_search import sync_global_search
-	from bs4 import BeautifulSoup
-
-	if frappe.flags.update_global_search:
-		sync_global_search()
-	frappe.flags.update_global_search = []
-	frappe.session.user = 'Guest'
-	frappe.local.no_cache = True
-
-	frappe.db.sql("DELETE FROM `__global_search` WHERE `doctype`='Static Web Page'")
-
-	for app in frappe.get_installed_apps(frappe_last=True):
-		app_path = frappe.get_app_path(app)
-
-		folders = get_start_folders()
-
-		for start in folders:
-			for basepath, folders, files in os.walk(os.path.join(app_path, start)):
-				for f in files:
-					if f.endswith('.html') or f.endswith('.md'):
-						path = os.path.join(basepath, f.rsplit('.', 1)[0])
-						try:
-							content = render_page(path)
-							soup = BeautifulSoup(content, 'html.parser')
-							text = ''
-							route = os.path.relpath(path, os.path.join(app_path, start))
-							for div in soup.findAll("div", {'class':'page-content'}):
-								text += div.text
-
-							frappe.flags.update_global_search.append(
-								dict(doctype='Static Web Page',
-									name=route,
-									content=text_type(text),
-									published=1,
-									title=text_type(soup.title.string),
-									route=route))
-
-						except Exception:
-							pass
-
-		sync_global_search()
 
 def get_start_folders():
 	return frappe.local.flags.web_pages_folders or ('www', 'templates/pages')

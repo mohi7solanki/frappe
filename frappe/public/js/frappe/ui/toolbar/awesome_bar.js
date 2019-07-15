@@ -70,6 +70,7 @@ frappe.search.AwesomeBar = Class.extend({
 				} else {
 					me.options = me.options.concat(
 						me.deduplicate(frappe.search.utils.get_recent_pages(txt || "")));
+					me.options = me.options.concat(frappe.search.utils.get_frequent_links());
 				}
 				me.add_help();
 
@@ -119,6 +120,10 @@ frappe.search.AwesomeBar = Class.extend({
 		$input.on("awesomplete-selectcomplete", function(e) {
 			$input.val("");
 		});
+
+		$input.on("keydown", null, 'esc', function() {
+			$input.blur();
+		});
 		frappe.search.utils.setup_recent();
 	},
 
@@ -159,6 +164,7 @@ frappe.search.AwesomeBar = Class.extend({
 		this.make_global_search(txt);
 		this.make_search_in_current(txt);
 		this.make_calculator(txt);
+		this.make_random(txt);
 	},
 
 	build_options: function(txt) {
@@ -203,7 +209,7 @@ frappe.search.AwesomeBar = Class.extend({
 		return out;
 	},
 
-	set_global_results: function(global_results, txt){
+	set_global_results: function(global_results, txt) {
 		this.global_results = this.global_results.concat(global_results);
 	},
 
@@ -267,4 +273,16 @@ frappe.search.AwesomeBar = Class.extend({
 			}
 		}
 	},
+
+	make_random: function(txt) {
+		if(txt.toLowerCase().includes('random')) {
+			this.options.push({
+				label: "Generate Random Password",
+				value: frappe.utils.get_random(16),
+				onclick: function() {
+					frappe.msgprint(frappe.utils.get_random(16), "Result");
+				}
+			})
+		}
+	}
 });

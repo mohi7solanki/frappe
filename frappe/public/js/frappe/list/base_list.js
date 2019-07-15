@@ -9,8 +9,7 @@ frappe.views.BaseList = class BaseList {
 		frappe.run_serially([
 			() => this.init(),
 			() => this.before_refresh(),
-			() => this.refresh(),
-			() => frappe.route_options = null
+			() => this.refresh()
 		]);
 	}
 
@@ -177,7 +176,7 @@ frappe.views.BaseList = class BaseList {
 			if (item.condition && item.condition() === false) {
 				return;
 			}
-			const $item = this.page.add_menu_item(item.label, item.action, item.standard);
+			const $item = this.page.add_menu_item(item.label, item.action, item.standard, item.shortcut);
 			if (item.class) {
 				$item && $item.addClass(item.class);
 			}
@@ -624,7 +623,8 @@ class FilterArea {
 				options: options,
 				fieldname: df.fieldname,
 				condition: condition,
-				onchange: () => this.refresh_list_view()
+				onchange: () => this.refresh_list_view(),
+				ignore_link_validation: fieldtype === 'Dynamic Link'
 			};
 		}));
 

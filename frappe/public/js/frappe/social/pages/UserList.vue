@@ -2,6 +2,7 @@
 	<div class="user-list-container">
 		<ul class="list-unstyled user-list">
 			<li class="user-card user-list-header text-medium">
+				<span class="rank-column"></span>
 				<span class="user-details text-muted">
 					<input
 						class="form-control"
@@ -18,6 +19,7 @@
 				</span>
 			</li>
 			<li class="user-card user-list-header text-medium">
+				<span class="rank-column">#</span>
 				<span class="user-details text-muted">{{ __('User') }}</span>
 				<span
 					class="flex-20 text-muted"
@@ -25,12 +27,13 @@
 					:key="title"
 				>{{ __(title) }}</span>
 			</li>
-			<li v-for="user in filtered_users" :key="user.name">
-				<div class="user-card" @click="toggle_log(user.name)">
-					<span class="user-details flex">
+			<li v-for="(user, index) in filtered_users" :key="user.name">
+				<div class="user-card">
+					<span class="user-details flex" @click="go_to_profile_page(user.name)">
+						<span class="rank-column">{{ index + 1 }}</span>
 						<span v-html="get_avatar(user.name)"></span>
 						<span>
-							<a @click="go_to_profile_page(user.name)">{{ user.fullname }}</a>
+							{{ user.fullname }}
 							<div
 								class="text-muted text-medium"
 								:class="{'italic': !user.bio}"
@@ -41,6 +44,7 @@
 						class="text-muted text-nowrap flex-20"
 						v-for="key in ['energy_points', 'review_points', 'given_points']"
 						:key="key"
+						@click="toggle_log(user.name)"
 					>{{ user[key] }}</span>
 				</div>
 				<energy-point-history
@@ -56,11 +60,7 @@
 	</div>
 </template>
 <script>
-import EnergyPointHistory from '../components/EnergyPointHistory.vue';
 export default {
-	components: {
-		EnergyPointHistory
-	},
 	data() {
 		return {
 			users: [],
@@ -68,23 +68,22 @@ export default {
 			sort_users_by: 'energy_points',
 			sort_order: 'desc',
 			show_log_for: null,
-			period_options: ['Lifetime', 'Last Month', 'Last Week', 'Today'],
-			period: 'Lifetime'
+			period_options: ['Lifetime', 'This Month', 'This Week', 'Today'],
+			period: 'This Month'
 		};
 	},
 	computed: {
 		from_date() {
-			const days_to_deduct = {
-				'Last Week': 7,
-				'Last Month': 30
-			};
-			if (this.period === 'Lifetime') {
-				return null;
+			if (this.period === 'This Month') {
+				return frappe.datetime.month_start();
+			}
+			if (this.period === 'This Week') {
+				return frappe.datetime.week_start();
 			}
 			if (this.period === 'Today') {
 				return frappe.datetime.get_today();
 			}
-			return frappe.datetime.add_days(moment(), -days_to_deduct[this.period]);
+			return null;
 		},
 		filtered_users() {
 			let filtered = this.users.slice();
@@ -166,17 +165,13 @@ export default {
 				});
 		},
 		toggle_log(user) {
-			if (this.show_log_for === user) {
-				this.show_log_for = null;
-			} else {
-				this.show_log_for = user;
-			}
+			frappe.set_route('List', 'Energy Point Log', {user:user});
 		}
 	}
 };
 </script>
 <style lang="less" scoped>
-@import 'frappe/public/less/variables';
+@import 'frappe/public/less/common';
 .user-list {
 	border-left: 1px solid @border-color;
 	border-right: 1px solid @border-color;
@@ -192,6 +187,11 @@ export default {
 			}
 		}
 	}
+}
+.rank-column {
+	flex: 0 0 30px;
+	align-self: center;
+	.text-muted
 }
 .flex-20 {
 	flex: 0 0 20%;

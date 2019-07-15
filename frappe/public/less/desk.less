@@ -1,7 +1,7 @@
 @import "variables.less";
 @import "mixins.less";
 @import "common.less";
-@import "quill.less";
+@import "print.less";
 
 .nav-pills a, .nav-pills a:hover {
 	border-bottom: none;
@@ -273,6 +273,10 @@ textarea.form-control {
 	margin-right: 10px;
 }
 
+.progress, .progress-bar {
+	box-shadow: none;
+}
+
 a.progress-small {
 	.progress-chart {
 		width: 40px;
@@ -457,27 +461,6 @@ li.user-progress {
 	padding: 18px 15px;
 	border-bottom: 1px solid @border-color;
 	border-radius: 0px;
-}
-
-// like pop-over
-.liked-by-popover {
-	.popover-content {
-		padding: 0px;
-		overflow: scroll;
-		max-height: 150px;
-	}
-	min-width: 100px;
-	ul {
-		margin: 0px;
-		li {
-			padding: 10px;
-			cursor: pointer;
-			&:hover {
-				background: @btn-bg;
-			}
-		}
-	}
-
 }
 
 .screenshot {
@@ -1063,10 +1046,31 @@ img.img-loading:after {
 // popover
 .popover {
 	border-radius: 4px;
+
+	.popover-content {
+		padding: 12px;
+	}
 }
 
-.popover-content {
-	padding: 12px;
+// like pop-over
+.liked-by-popover {
+	.popover-content {
+		padding: 0px;
+		overflow: scroll;
+		max-height: 150px;
+	}
+	min-width: 100px;
+	ul {
+		margin: 0px;
+		li {
+			padding: 10px;
+			cursor: pointer;
+			&:hover {
+				background: @btn-bg;
+			}
+		}
+	}
+
 }
 
 body.full-width {
@@ -1081,4 +1085,30 @@ body.full-width {
 
 .whitespace-nowrap {
 	white-space: nowrap;
+}
+
+.modal-minimize {
+	position: initial;
+	.modal-backdrop {
+		display: none;
+	}
+	.modal-dialog {
+		z-index: 101;
+		position: fixed;
+		right: 15px;
+		bottom: 0;
+		margin: 0;
+		max-width: 500px;
+	}
+	.modal-body {
+		display: none;
+	}
+}
+
+.app-logo {
+	width: 24px;
+}
+
+.alt-pressed .alt-underline {
+	text-decoration: underline;
 }

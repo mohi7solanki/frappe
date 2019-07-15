@@ -316,6 +316,12 @@ def get_backups_path():
 def get_request_site_address(full_address=False):
 	return get_url(full_address=full_address)
 
+def get_site_url(site):
+	return 'http://{site}:{port}'.format(
+		site=site,
+		port=frappe.get_conf(site).webserver_port
+	)
+
 def encode_dict(d, encoding="utf-8"):
 	for key in d:
 		if isinstance(d[key], string_types) and isinstance(d[key], text_type):
@@ -541,6 +547,8 @@ def get_site_info():
 	system_settings = frappe.db.get_singles_dict('System Settings')
 	space_usage = frappe._dict((frappe.local.conf.limits or {}).get('space_usage', {}))
 
+	kwargs = {"fields": ["user", "creation", "full_name"], "filters":{"Operation": "Login", "Status": "Success"}, "limit": "10"}
+
 	site_info = {
 		'installed_apps': get_installed_apps_info(),
 		'users': users,
@@ -555,7 +563,8 @@ def get_site_info():
 		'space_used': flt((space_usage.total or 0) / 1024.0, 2),
 		'database_size': space_usage.database_size,
 		'backup_size': space_usage.backup_size,
-		'files_size': space_usage.files_size
+		'files_size': space_usage.files_size,
+		'last_logins': frappe.get_all("Activity Log", **kwargs)
 	}
 
 	# from other apps

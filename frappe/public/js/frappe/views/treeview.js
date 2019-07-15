@@ -62,7 +62,7 @@ frappe.views.TreeView = Class.extend({
 
 		this.page = this.parent.page;
 		frappe.container.change_to(this.page_name);
-		frappe.breadcrumbs.add(me.opts.breadcrumb || locals.DocType[me.doctype].module);
+		frappe.breadcrumbs.add(me.opts.breadcrumb || locals.DocType[me.doctype].module, me.doctype);
 
 		this.set_title();
 
@@ -107,11 +107,10 @@ frappe.views.TreeView = Class.extend({
 					me.args[filter.fieldname] = val;
 					if (val) {
 						me.root_label = val;
-						me.page.set_title(val);
 					} else {
 						me.root_label = me.opts.root_label;
-						me.set_title();
 					}
+					me.set_title();
 					me.make_tree();
 				}
 			}
